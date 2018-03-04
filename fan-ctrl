@@ -1,0 +1,56 @@
+#!/bin/bash
+
+while true; do
+	FAN_STATE=$(i2cget -y 1 0x60 0x05)
+
+	TEMP_CPU=$(($(</sys/class/thermal/thermal_zone0/temp) / 1000))
+	TEMP_SDA=$(smartctl -A /dev/sda -d sat | awk '$2 == "Temperature_Celsius" {printf "%d", $10; exit;}')
+	TEMP_SDB=$(smartctl -A /dev/sdb -d sat | awk '$2 == "Temperature_Celsius" {printf "%d", $10; exit;}')
+
+	CPU_FAN_TARGET_STATE=""
+	CPU_REASON=""
+
+	SDA_FAN_TARGET_STATE=""
+	SDA_REASON=""
+
+	SDB_FAN_TARGET_STATE=""
+	SDB_REASON=""
+
+	if [[ "0xf5" == "$FAN_STATE" && $TEMP_CPU -gt 70 ]]; then
+		CPU_FAN_TARGET_STATE="on"
+		CPU_REASON="- CPU overheating"
+	elif [[ "0xf0" == "$FAN_STATE" && $TEMP_CPU -lt 55 ]]; then
+		CPU_FAN_TARGET_STATE="off"
+		CPU_REASON="- CPU cooled down"
+	fi
+
+	if [[ "0xf5" == "$FAN_STATE" && $TEMP_SDA -gt 55 ]]; then
+		SDA_FAN_TARGET_STATE="on"
+		SDA_REASON="- SDA overheating"
+	elif [[ "0xf0" == "$FAN_STATE" && $TEMP_SDA -lt 35 ]]; then
+		SDA_FAN_TARGET_STATE="off"
+		SDA_REASON="- SDA cooled down"
+	fi
+
+	if [[ "0xf5" == "$FAN_STATE" && $TEMP_SDB -gt 55 ]]; then
+		SDB_FAN_TARGET_STATE="on"
+		SDB_REASON="- SDB overheating"
+	elif [[ "0xf0" == "$FAN_STATE" && $TEMP_SDB -lt 35 ]]; then
+		SDB_FAN_TARGET_STATE="off"
+		SDB_REASON="- SDB cooled down"
+	fi
+
+	# Debug
+	#echo "$FAN_STATE $TEMP_CPU $CPU_FAN_TARGET_STATE $TEMP_SDA $SDA_FAN_TARGET_STATE $TEMP_SDB $SDB_FAN_TARGET_STATE"
+
+	if [[ "$CPU_FAN_TARGET_STATE" == "on" || "$SDA_FAN_TARGET_STATE" == "on" || "$SDB_FAN_TARGET_STATE" == "on" ]]; then
+		echo "Start fan $CPU_REASON $SDA_REASON $SDB_REASON"
+		i2cset -y 1 0x60 0x05 0xf0
+	elif [[ "$CPU_FAN_TARGET_STATE" == "off" && "$SDA_FAN_TARGET_STATE" == "off" && "$SDB_FAN_TARGET_STATE" == "off" ]]; then
+		echo "Stop fan $CPU_REASON $SDA_REASON $SDB_REASON"
+		i2cset -y 1 0x60 0x05 0xf5
+	fi
+
+	sleep 1
+done
+
